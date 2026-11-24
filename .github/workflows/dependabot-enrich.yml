@@ -11,7 +11,7 @@ jobs:
 #    if: github.actor == 'dependabot[bot]'
     permissions:
       pull-requests: write
-    uses: govuk-one-login/firebreak-64-vm-poc/.github/workflows/dependabot-enrich.yml@FIRE-64/dependabot-enrich-reusable-workflow
+    uses: govuk-one-login/firebreak-64-vm-poc/.github/workflows/dependabot-enrich.yml@8a1dbd76860a46d8de64ea5fd1b6a048b85e78cf
     with:
       pr-number: ${{ github.event.pull_request.number }}
       pr-body: ${{ github.event.pull_request.body }}

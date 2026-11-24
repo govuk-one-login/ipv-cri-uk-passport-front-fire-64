@@ -1,0 +1,56 @@
+name: Dependabot EPSS/KEV enrichment
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  enrich:
+    #    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post enrichment comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          cve=$(echo "$PR_BODY" | grep -oiE 'CVE-[0-9]{4}-[0-9]+' | head -1 | tr '[:lower:]' '[:upper:]')
+
+          if [ -z "$cve" ]; then
+            echo "No CVE found — skipping"
+            exit 0
+          fi
+
+          epss=$(gh api "https://api.github.com/advisories?cve_id=${cve}" \
+            --jq '.[0].epss // "N/A"')
+
+          in_kev=$(curl -sf "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" \
+            | jq --arg cve "$cve" '[.vulnerabilities[].cveID] | contains([$cve])')
+
+          if [ "$in_kev" = "true" ]; then
+            recommendation="[KEV] Actively exploited — do not dismiss this PR"
+          elif [ "$epss" != "N/A" ] && awk "BEGIN{exit !($epss >= 0.10)}"; then
+            recommendation="[HIGH] High exploitation probability — merge this sprint"
+          else
+            recommendation="[NORMAL] Low exploitation probability — merge at normal priority"
+          fi
+
+          body="${cve} — ${recommendation}"
+
+          existing_id=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("CVE-"))) | .id' \
+            | head -1)
+
+          if [ -n "$existing_id" ]; then
+            gh api --method PATCH "repos/${REPO}/issues/comments/${existing_id}" \
+              -f body="$body"
+          else
+            gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              -f body="$body"
+          fi
